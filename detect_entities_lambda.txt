@@ -1,0 +1,58 @@
+import json
+import boto3
+import os
+import sys
+import uuid
+import logging
+
+def lambda_handler(event, context):
+	
+    logger = logging.getLogger()
+    logger.setLevel(logging.INFO)
+    
+    rekognition_client = boto3.client('rekognition')
+    dynamodb_client = client = boto3.client('dynamodb')
+    
+    logger.info('Found event{}'.format(event))
+    
+    for record in event['Records']:
+        # Read the value of the eventSource attribute. 
+        #
+        # You can use this to conditionally handle events 
+        # from different triggers in the same lambda function.
+        event_source = record['eventSource']
+        logger.info(event_source)
+        
+        # read S3 bucket and object key
+        bucket = record['s3']['bucket']['name']
+        key = record['s3']['object']['key'] 
+        
+        logger.info('Found bucket ' +  bucket)
+        logger.info('Found key ' + key)
+        
+        # use Amazon Rekpgnition to detect labels in the image
+        rekognition_results = rekognition_client.detect_labels(
+            Image = {'S3Object': {'Bucket': bucket,'Name': key}},
+            MaxLabels = 5,
+            MinConfidence = 70)
+        
+        # write results of label detection to DynamoDB
+        for label in rekognition_results['Labels']:
+            
+            text = label['Name']
+            confidence = str(label['Confidence'])
+            
+            logger.info('Found label ' + text)
+            
+            dynamodb_response = dynamodb_client.put_item(
+                Item={'label': {'S': text},'filename': {'S': key}, 'confidence': {'N':confidence}},
+                ReturnConsumedCapacity='TOTAL',
+                TableName='imageindex')
+                
+            logger.info('DynamDBResponse ' + format(dynamodb_response))
+
+
+    # return the entities that were detected.
+    return {
+    'statusCode': 200,
+    }
